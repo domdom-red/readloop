@@ -8,12 +8,14 @@ export default function ReviewSession({ cards, onClose, onComplete }) {
   const [userAnswer, setUserAnswer] = useState('');
   const [phase, setPhase] = useState('question'); // question | grading | result
   const [gradeResult, setGradeResult] = useState(null);
+  const [showHint, setShowHint] = useState(false);
   const [results, setResults] = useState([]);
   const [done, setDone] = useState(false);
 
   const card = cards[idx];
   const goodCount = results.filter(r => r.rating === 'good').length;
   const hasApiKey = !!getApiKey();
+  const hasHint = !!card.hint;
 
   const submit = async () => {
     if (!hasApiKey) {
@@ -44,6 +46,7 @@ export default function ReviewSession({ cards, onClose, onComplete }) {
     setResults(newResults);
     setUserAnswer('');
     setGradeResult(null);
+    setShowHint(false);
 
     if (idx + 1 >= cards.length) {
       setDone(true);
@@ -91,19 +94,46 @@ export default function ReviewSession({ cards, onClose, onComplete }) {
         <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', minWidth: 40, textAlign: 'right' }}>{idx + 1} / {cards.length}</div>
       </div>
 
-      {/* Scrollable content */}
+      {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 24px 40px' }}>
-        {/* Card */}
         <div key={`${idx}-q`} className="anim-flip" style={{
           width: '100%', maxWidth: 540, background: M3.surface, borderRadius: 24, padding: '28px 24px',
           display: 'flex', flexDirection: 'column', gap: 14,
         }}>
+          {/* Type + source */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, background: M3.secondaryCont, color: M3.onSecondaryCont, fontWeight: 600 }}>{card.type}</span>
             <span style={{ fontSize: 12, color: M3.onSurfaceVar, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{card.articleTitle}</span>
           </div>
 
+          {/* Question */}
           <div style={{ fontSize: 20, lineHeight: '30px', fontWeight: 500, color: M3.onSurface }}>{card.q}</div>
+
+          {/* Hint (togglable, question phase only) */}
+          {phase === 'question' && hasHint && (
+            <div>
+              <button
+                onClick={() => setShowHint(v => !v)}
+                style={{
+                  background: 'none', border: `1px solid ${M3.outlineVar}`, borderRadius: 8,
+                  padding: '5px 12px', fontSize: 12, color: M3.onSurfaceVar, cursor: 'pointer',
+                  fontFamily: 'Roboto,system-ui', display: 'flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                <Icon name={showHint ? 'visibility_off' : 'visibility'} size={14} color={M3.onSurfaceVar} />
+                {showHint ? '힌트 숨기기' : '힌트 보기'}
+              </button>
+              {showHint && (
+                <div className="anim-fade" style={{
+                  marginTop: 8, padding: '10px 14px', borderRadius: 10,
+                  background: M3.surfContHigh, borderLeft: `3px solid ${M3.outlineVar}`,
+                  fontSize: 13, lineHeight: '20px', color: M3.onSurfaceVar, fontStyle: 'italic',
+                }}>
+                  {card.hint}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Answer textarea */}
           <textarea
@@ -111,39 +141,53 @@ export default function ReviewSession({ cards, onClose, onComplete }) {
             value={userAnswer}
             onChange={e => setUserAnswer(e.target.value)}
             disabled={phase !== 'question'}
-            placeholder="생각나는 대로 자유롭게 적어보세요…"
+            placeholder="생각나는 대로 적어보세요…"
             onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit(); }}
             style={{
-              width: '100%', minHeight: 90, resize: 'vertical',
+              width: '100%', minHeight: 80, resize: 'vertical',
               border: `1px solid ${M3.outlineVar}`, borderRadius: 10,
               padding: '10px 12px', fontSize: 14, lineHeight: '21px',
               color: M3.onSurface, background: phase === 'question' ? M3.surfContLow : M3.surfContHigh,
-              fontFamily: 'Roboto,system-ui', outline: 'none',
-              boxSizing: 'border-box',
+              fontFamily: 'Roboto,system-ui', outline: 'none', boxSizing: 'border-box',
             }}
           />
 
-          {/* Grading result */}
+          {/* Grading spinner */}
           {phase === 'grading' && (
-            <div style={{ textAlign: 'center', padding: '8px 0', fontSize: 14, color: M3.onSurfaceVar }}>
+            <div style={{ textAlign: 'center', padding: '4px 0', fontSize: 13, color: M3.onSurfaceVar }}>
               AI가 채점 중이에요…
             </div>
           )}
 
-          {phase === 'result' && gradeResult && (
-            <div style={{ padding: '14px 16px', borderRadius: 12, background: resultBg, borderLeft: `3px solid ${resultColor}` }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: resultColor, marginBottom: 6 }}>
-                {correct === true ? '✓ 잘 이해하고 있어요' : correct === false ? '✗ 다시 확인해봐요' : '💬 참고'}
-              </div>
-              <div style={{ fontSize: 13, lineHeight: '20px', color: M3.onSurface }}>{gradeResult.feedback}</div>
-            </div>
-          )}
+          {/* Result */}
+          {phase === 'result' && (
+            <>
+              {gradeResult && (
+                <div style={{ padding: '14px 16px', borderRadius: 12, background: resultBg, borderLeft: `3px solid ${resultColor}` }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: resultColor, marginBottom: 6 }}>
+                    {correct === true ? '✓ 잘 이해하고 있어요' : correct === false ? '✗ 다시 확인해봐요' : '💬 참고'}
+                  </div>
+                  <div style={{ fontSize: 13, lineHeight: '20px', color: M3.onSurface }}>{gradeResult.feedback}</div>
+                </div>
+              )}
 
-          {phase === 'result' && !gradeResult && card.summary && (
-            <div style={{ padding: '14px 16px', borderRadius: 12, background: M3.primaryCont, borderLeft: `3px solid ${M3.primary}` }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: M3.primary, marginBottom: 6 }}>핵심 요약</div>
-              <div style={{ fontSize: 13, lineHeight: '20px', color: M3.onPrimaryCont }}>{card.summary}</div>
-            </div>
+              {/* Always show hint/note snippet in result for reinforcement */}
+              {(card.hint || card.summary) && (
+                <div style={{ padding: '12px 14px', borderRadius: 10, background: M3.surfContHigh, borderLeft: `3px solid ${M3.outlineVar}` }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: M3.onSurfaceVar, marginBottom: 6, letterSpacing: 0.4 }}>노트 원문</div>
+                  <div style={{ fontSize: 13, lineHeight: '20px', color: M3.onSurface, fontStyle: 'italic' }}>
+                    {card.hint || card.summary}
+                  </div>
+                </div>
+              )}
+
+              {!gradeResult && !card.hint && card.summary && (
+                <div style={{ padding: '14px 16px', borderRadius: 12, background: M3.primaryCont, borderLeft: `3px solid ${M3.primary}` }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: M3.primary, marginBottom: 6 }}>핵심 요약</div>
+                  <div style={{ fontSize: 13, lineHeight: '20px', color: M3.onPrimaryCont }}>{card.summary}</div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -159,7 +203,6 @@ export default function ReviewSession({ cards, onClose, onComplete }) {
                   background: userAnswer.trim() ? M3.inversePrimary : 'rgba(255,255,255,0.2)',
                   color: userAnswer.trim() ? M3.onPrimaryCont : 'rgba(255,255,255,0.4)',
                   fontSize: 16, fontWeight: 500, fontFamily: 'Roboto,system-ui',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                   transition: 'background 0.15s',
                 }}
               >

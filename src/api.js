@@ -126,16 +126,37 @@ async function callLLM(prompt, maxTokens = 200) {
 export async function generateQuestions(title, notes, summary) {
   const ctx = [summary, notes].filter(Boolean).join('\n\n');
   const raw = await callLLM(
-    `아티클 제목: "${title}"\n\n내용:\n${ctx}\n\n위 내용을 바탕으로 복습 퀴즈 3개를 만들어줘.\n- 반드시 노트에 실제로 나온 구체적인 내용을 물어볼 것\n- 추상적이거나 범위가 넓은 질문 금지\n- 타입은 "핵심 개념", "빈칸 채우기", "업무 적용" 중 하나\n- 빈칸 채우기는 핵심 키워드를 ___로 표시\n\nJSON 배열만 출력:\n[{"type":"...","q":"..."},{"type":"...","q":"..."},{"type":"...","q":"..."}]`,
-    400,
+    `아티클 제목: "${title}"
+
+내용:
+${ctx}
+
+아래 규칙을 반드시 지켜서 복습 퀴즈 3개를 만들어.
+
+규칙:
+1. 질문 안에 위 내용의 실제 문장을 직접 인용하거나 밀접하게 활용할 것
+2. 빈칸 채우기: 핵심 문장에서 가장 중요한 단어/구를 ___로 대체. 나머지 문장은 그대로 유지
+3. 인과 관계: 노트에 나온 원인-결과를 활용. 한쪽을 문장으로 제시하고 나머지를 질문할 것
+4. hint: 해당 질문의 답이 담긴 노트 원문 문장 (짧게, 1~2문장)
+5. 정답이 노트 안에 명확히 있어야 함. 추측·상상이 필요한 질문 금지
+6. 타입은 "빈칸 채우기", "인과 관계", "핵심 개념" 중 하나
+
+JSON 배열만 출력 (다른 텍스트 없이):
+[{"type":"빈칸 채우기","q":"노트 문장에서 ___ 처리한 질문","hint":"답이 포함된 노트 원문"},{"type":"인과 관계","q":"[맥락 제시] → [?]는?","hint":"답이 포함된 노트 원문"},{"type":"핵심 개념","q":"노트에서 언급한 [구체적 맥락]에서 [?]는?","hint":"답이 포함된 노트 원문"}]`,
+    600,
   );
   try {
     const arr = JSON.parse(raw.match(/\[[\s\S]*\]/)?.[0] || '[]');
     if (Array.isArray(arr) && arr.length > 0) {
-      return arr.map(q => ({ id: Math.random().toString(36).slice(2, 9), type: q.type, q: q.q }));
+      return arr.map(q => ({
+        id: Math.random().toString(36).slice(2, 9),
+        type: q.type,
+        q: q.q,
+        hint: q.hint || '',
+      }));
     }
   } catch {}
-  return null; // caller falls back to makeQuestions
+  return null;
 }
 
 export async function generateSummary(title, notes) {
