@@ -1,21 +1,23 @@
 import { useState } from 'react';
 import { M3 } from '../theme.js';
-import { Scrim, Btn, IconBtn, FormInput } from './ui.jsx';
-import { getApiKey, setApiKey } from '../api.js';
+import { Scrim, Btn, IconBtn } from './ui.jsx';
+import { PROVIDERS, getProvider, setProvider, getApiKey, setApiKey } from '../api.js';
 
 export default function SettingsModal({ onClose }) {
-  const [key, setKey] = useState(getApiKey());
+  const [activeProvider, setActiveProvider] = useState(getProvider());
+  const [keys, setKeys] = useState(() =>
+    Object.fromEntries(PROVIDERS.map(p => [p.id, getApiKey(p.id)])),
+  );
   const [saved, setSaved] = useState(false);
 
-  const save = () => {
-    setApiKey(key);
-    setSaved(true);
-    setTimeout(onClose, 800);
-  };
+  const provider = PROVIDERS.find(p => p.id === activeProvider);
 
-  const maskedCurrent = getApiKey()
-    ? getApiKey().slice(0, 12) + '••••••••••••'
-    : null;
+  const save = () => {
+    setProvider(activeProvider);
+    PROVIDERS.forEach(p => setApiKey(keys[p.id] || '', p.id));
+    setSaved(true);
+    setTimeout(onClose, 700);
+  };
 
   return (
     <>
@@ -27,26 +29,75 @@ export default function SettingsModal({ onClose }) {
         display: 'flex', flexDirection: 'column', gap: 20,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 22, fontWeight: 500, color: M3.onSurface }}>설정</div>
+          <div style={{ fontSize: 22, fontWeight: 500, color: M3.onSurface }}>AI 설정</div>
           <IconBtn name="close" onClick={onClose} />
         </div>
 
+        {/* Provider tabs */}
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: M3.onSurface, marginBottom: 6 }}>Anthropic API 키</div>
-          <div style={{ fontSize: 12, color: M3.onSurfaceVar, marginBottom: 12, lineHeight: '18px' }}>
-            AI 자동 요약·채점에 사용돼요. 키는 이 기기 로컬에만 저장되고 외부로 전송되지 않아요.
-            {maskedCurrent && <div style={{ marginTop: 6, color: M3.primary }}>현재: {maskedCurrent}</div>}
+          <div style={{ fontSize: 12, fontWeight: 500, color: M3.onSurfaceVar, letterSpacing: 0.4, marginBottom: 10 }}>AI 모델 선택</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {PROVIDERS.map(p => {
+              const active = activeProvider === p.id;
+              const hasKey = !!keys[p.id];
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setActiveProvider(p.id)}
+                  style={{
+                    flex: 1, padding: '10px 8px', borderRadius: 14, cursor: 'pointer',
+                    border: active ? `2px solid ${M3.primary}` : `1px solid ${M3.outlineVar}`,
+                    background: active ? M3.primaryCont : 'transparent',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 600, color: active ? M3.onPrimaryCont : M3.onSurface }}>
+                    {p.label}
+                  </div>
+                  <div style={{ fontSize: 10, color: active ? M3.primary : M3.onSurfaceVar }}>
+                    {p.sub}
+                  </div>
+                  {hasKey && (
+                    <div style={{ fontSize: 10, color: M3.primary, fontWeight: 600 }}>✓ 키 있음</div>
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <FormInput
-            label="API 키"
-            value={key}
-            onChange={setKey}
-            placeholder="sk-ant-api03-..."
+        </div>
+
+        {/* Key input for selected provider */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: M3.onSurface }}>{provider.label} API 키</div>
+            <a
+              href={provider.keyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontSize: 12, color: M3.primary, textDecoration: 'none' }}
+            >
+              키 발급 →
+            </a>
+          </div>
+          <input
+            value={keys[activeProvider]}
+            onChange={e => setKeys(prev => ({ ...prev, [activeProvider]: e.target.value }))}
+            placeholder={provider.placeholder}
+            style={{
+              width: '100%', height: 42, border: `1px solid ${M3.outlineVar}`, borderRadius: 10,
+              padding: '0 12px', fontSize: 14, color: M3.onSurface, background: M3.surfContLow,
+              fontFamily: 'Roboto,system-ui', outline: 'none', boxSizing: 'border-box',
+            }}
           />
+          {activeProvider === 'gemini' && !keys.gemini && (
+            <div style={{ marginTop: 8, fontSize: 12, color: M3.primary, lineHeight: '18px' }}>
+              Gemini는 무료 티어로 하루 1,500회 요청이 가능해요.
+            </div>
+          )}
         </div>
 
         <div style={{ fontSize: 12, color: M3.onSurfaceVar, background: M3.surfContLow, borderRadius: 10, padding: '10px 14px', lineHeight: '18px' }}>
-          키 발급: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" style={{ color: M3.primary }}>console.anthropic.com</a>에서 발급 후 붙여넣기
+          API 키는 이 기기 로컬에만 저장되며 외부로 전송되지 않아요.
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
