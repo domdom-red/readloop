@@ -1,5 +1,6 @@
 import { M3 } from '../theme.js';
 import { Scrim, Btn, IconBtn, Icon } from './ui.jsx';
+import Markdown from './Markdown.jsx';
 import { timeAgo } from '../utils.js';
 
 export default function ArticleDetail({ article: a, onClose, onDelete }) {
@@ -8,7 +9,7 @@ export default function ArticleDetail({ article: a, onClose, onDelete }) {
       <Scrim onClick={onClose} z={300} />
       <div className="anim-slide" style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-        zIndex: 400, width: 600, maxWidth: 'calc(100vw - 32px)', maxHeight: '88vh',
+        zIndex: 400, width: 640, maxWidth: 'calc(100vw - 32px)', maxHeight: '88vh',
         background: M3.surface, borderRadius: 28, padding: 28,
         display: 'flex', flexDirection: 'column', gap: 16, overflow: 'auto',
       }}>
@@ -27,10 +28,23 @@ export default function ArticleDetail({ article: a, onClose, onDelete }) {
           </a>
         )}
 
+        {/* One-line summary */}
         {a.summary && (
+          <div style={{ background: M3.primaryCont, borderRadius: 12, padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <Icon name="lightbulb" size={18} color={M3.primary} />
+            <div style={{ fontSize: 14, lineHeight: '21px', color: M3.onPrimaryCont, fontWeight: 500 }}>{a.summary}</div>
+          </div>
+        )}
+
+        {/* Notes (markdown) */}
+        {(a.notes || a.summary) && (
           <div style={{ background: M3.surfContLow, borderRadius: 12, padding: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: M3.onSurfaceVar, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 6 }}>요약</div>
-            <div style={{ fontSize: 14, lineHeight: '22px', color: M3.onSurface }}>{a.summary}</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: M3.onSurfaceVar, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>노트</div>
+            {a.notes ? (
+              <Markdown text={a.notes} style={{ color: M3.onSurface }} />
+            ) : (
+              <div style={{ fontSize: 14, color: M3.onSurfaceVar }}>노트 없음</div>
+            )}
           </div>
         )}
 

@@ -58,7 +58,7 @@ export function getTodayCards(articles) {
     if (cards.length >= 6) break;
     a.questions.forEach(q => {
       if (cards.length < 6)
-        cards.push({ ...q, articleId: a.id, articleTitle: a.title, summary: a.summary });
+        cards.push({ ...q, articleId: a.id, articleTitle: a.title, summary: a.summary, notes: a.notes || '' });
     });
   }
   return cards;

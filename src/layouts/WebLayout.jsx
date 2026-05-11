@@ -5,6 +5,7 @@ import WebSidebar from '../components/WebSidebar.jsx';
 import AddArticleModal from '../components/AddArticleModal.jsx';
 import ArticleDetail from '../components/ArticleDetail.jsx';
 import ReviewSession from '../components/ReviewSession.jsx';
+import SettingsModal from '../components/SettingsModal.jsx';
 import LibraryView from '../views/LibraryView.jsx';
 import ReviewView from '../views/ReviewView.jsx';
 import SearchView from '../views/SearchView.jsx';
@@ -14,6 +15,7 @@ import { getTodayCards } from '../utils.js';
 export default function WebLayout({ state, dispatch }) {
   const [activeNav, setActiveNav] = useState('Library');
   const [showAdd, setShowAdd] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [reviewSession, setReviewSession] = useState(null);
 
@@ -70,7 +72,7 @@ export default function WebLayout({ state, dispatch }) {
 
         <div style={{ flex: 1 }} />
         <Btn variant="tonal" icon="add" onClick={() => setShowAdd(true)}>아티클 추가</Btn>
-        <div style={{ width: 36, height: 36, borderRadius: '50%', background: M3.tertiaryCont, color: M3.onTertiaryCont, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>주</div>
+        <IconBtn name="settings" onClick={() => setShowSettings(true)} />
       </header>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -91,6 +93,7 @@ export default function WebLayout({ state, dispatch }) {
         )}
       </div>
 
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {showAdd && <AddArticleModal onClose={() => setShowAdd(false)} onAdd={art => dispatch({ type: 'ADD_ARTICLE', article: art })} />}
       {selectedArticle && <ArticleDetail article={selectedArticle} onClose={() => setSelectedArticle(null)} onDelete={id => { dispatch({ type: 'DELETE_ARTICLE', id }); setSelectedArticle(null); }} />}
       {reviewSession && <ReviewSession cards={reviewSession} onClose={() => setReviewSession(null)} onComplete={results => { dispatch({ type: 'COMPLETE_REVIEW', results }); setReviewSession(null); }} />}

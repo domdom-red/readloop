@@ -4,6 +4,7 @@ import { IconBtn, Btn, Icon } from '../components/ui.jsx';
 import AddArticleModal from '../components/AddArticleModal.jsx';
 import ArticleDetail from '../components/ArticleDetail.jsx';
 import ReviewSession from '../components/ReviewSession.jsx';
+import SettingsModal from '../components/SettingsModal.jsx';
 import SearchView from '../views/SearchView.jsx';
 import RecapView from '../views/RecapView.jsx';
 import { computeStats, getTodayCards, timeAgo } from '../utils.js';
@@ -18,6 +19,7 @@ const NAV = [
 export default function MobileLayout({ state, dispatch }) {
   const [activeNav, setActiveNav] = useState('home');
   const [showAdd, setShowAdd] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [reviewSession, setReviewSession] = useState(null);
 
@@ -38,6 +40,7 @@ export default function MobileLayout({ state, dispatch }) {
                 <Icon name="autorenew" size={18} color={M3.onPrimary} />
               </div>
               <span style={{ fontSize: 18, fontWeight: 700, color: M3.onSurface, flex: 1 }}>ReadLoop</span>
+              <IconBtn name="settings" onClick={() => setShowSettings(true)} color={M3.onSurfaceVar} />
               <IconBtn name="add" onClick={() => setShowAdd(true)} color={M3.primary} />
             </div>
 
@@ -162,6 +165,7 @@ export default function MobileLayout({ state, dispatch }) {
         ))}
       </nav>
 
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {showAdd && <AddArticleModal onClose={() => setShowAdd(false)} onAdd={art => dispatch({ type: 'ADD_ARTICLE', article: art })} />}
       {selectedArticle && <ArticleDetail article={selectedArticle} onClose={() => setSelectedArticle(null)} onDelete={id => { dispatch({ type: 'DELETE_ARTICLE', id }); setSelectedArticle(null); }} />}
       {reviewSession && <ReviewSession cards={reviewSession} onClose={() => setReviewSession(null)} onComplete={results => { dispatch({ type: 'COMPLETE_REVIEW', results }); setReviewSession(null); }} />}

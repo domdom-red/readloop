@@ -3,14 +3,18 @@ import { M3 } from '../theme.js';
 import { Scrim, Btn, IconBtn, FormInput } from './ui.jsx';
 import { genId, domainOf, parseTags, makeQuestions } from '../utils.js';
 import { ALL_CATEGORIES } from '../data.js';
+import { generateSummary, getApiKey } from '../api.js';
 
 export default function AddArticleModal({ onClose, onAdd }) {
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [source, setSource] = useState('');
+  const [notes, setNotes] = useState('');
   const [summary, setSummary] = useState('');
   const [tags, setTags] = useState('');
   const [cats, setCats] = useState([]);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState('');
 
   useEffect(() => {
     if (url && !source) {
@@ -20,6 +24,24 @@ export default function AddArticleModal({ onClose, onAdd }) {
   }, [url]);
 
   const toggleCat = c => setCats(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]);
+
+  const handleGenSummary = async () => {
+    if (!notes.trim() && !title.trim()) return;
+    setGenerating(true);
+    setGenError('');
+    try {
+      const result = await generateSummary(title.trim() || '(제목 없음)', notes.trim() || title.trim());
+      setSummary(result);
+    } catch (e) {
+      if (e.message === 'NO_API_KEY') {
+        setGenError('설정에서 API 키를 먼저 입력해주세요');
+      } else {
+        setGenError('생성 실패: ' + e.message);
+      }
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const submit = () => {
     if (!title.trim()) return;
@@ -31,6 +53,7 @@ export default function AddArticleModal({ onClose, onAdd }) {
       savedAt: new Date().toISOString(),
       categories: cats,
       tags: parseTags(tags),
+      notes: notes.trim(),
       summary: summary.trim(),
       score: 0,
       reviewCount: 0,
@@ -39,6 +62,8 @@ export default function AddArticleModal({ onClose, onAdd }) {
     });
     onClose();
   };
+
+  const hasApiKey = !!getApiKey();
 
   return (
     <>
@@ -57,7 +82,52 @@ export default function AddArticleModal({ onClose, onAdd }) {
         <FormInput label="제목" value={title} onChange={setTitle} placeholder="아티클 제목을 입력하세요" required />
         <FormInput label="URL" value={url} onChange={setUrl} placeholder="https://..." />
         <FormInput label="출처" value={source} onChange={setSource} placeholder="서핏, 브런치, 뉴스레터 등" />
-        <FormInput label="요약 / 메모" value={summary} onChange={setSummary} placeholder="핵심 내용이나 읽으면서 느낀 점을 적어두세요" multiline />
+
+        {/* Notes */}
+        <FormInput
+          label="노트"
+          value={notes}
+          onChange={setNotes}
+          placeholder={"생각, 아이디어, 노션에서 복붙 — 자유롭게 적어두세요"}
+          multiline
+        />
+
+        {/* Summary */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: M3.onSurfaceVar, letterSpacing: 0.4 }}>한 줄 요약 (선택)</div>
+            {hasApiKey ? (
+              <button
+                onClick={handleGenSummary}
+                disabled={generating || (!notes.trim() && !title.trim())}
+                style={{
+                  height: 26, padding: '0 12px', borderRadius: 8, border: 0, cursor: 'pointer',
+                  background: generating ? M3.surfContHigh : M3.primaryCont,
+                  color: M3.onPrimaryCont, fontSize: 12, fontWeight: 500,
+                  fontFamily: 'Roboto,system-ui', opacity: generating ? 0.6 : 1,
+                }}
+              >
+                {generating ? '생성 중…' : '✦ AI 생성'}
+              </button>
+            ) : (
+              <span style={{ fontSize: 11, color: M3.onSurfaceVar }}>API 키 설정 시 AI 자동 생성</span>
+            )}
+          </div>
+          {genError && (
+            <div style={{ fontSize: 12, color: M3.error, marginBottom: 6 }}>{genError}</div>
+          )}
+          <input
+            value={summary}
+            onChange={e => setSummary(e.target.value)}
+            placeholder="직접 입력하거나 AI 생성 버튼을 눌러보세요"
+            style={{
+              width: '100%', height: 40, border: `1px solid ${M3.outlineVar}`, borderRadius: 10,
+              padding: '0 12px', fontSize: 14, color: M3.onSurface, background: M3.surfContLow,
+              fontFamily: 'Roboto,system-ui', outline: 'none', boxSizing: 'border-box',
+            }}
+          />
+        </div>
+
         <FormInput label="태그 (쉼표로 구분)" value={tags} onChange={setTags} placeholder="디자인 시스템, AI, Figma MCP" />
 
         <div>
