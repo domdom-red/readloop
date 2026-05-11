@@ -123,6 +123,21 @@ async function callLLM(prompt, maxTokens = 200) {
 
 // ── Public API ────────────────────────────────────────────────────────────
 
+export async function generateQuestions(title, notes, summary) {
+  const ctx = [summary, notes].filter(Boolean).join('\n\n');
+  const raw = await callLLM(
+    `아티클 제목: "${title}"\n\n내용:\n${ctx}\n\n위 내용을 바탕으로 복습 퀴즈 3개를 만들어줘.\n- 반드시 노트에 실제로 나온 구체적인 내용을 물어볼 것\n- 추상적이거나 범위가 넓은 질문 금지\n- 타입은 "핵심 개념", "빈칸 채우기", "업무 적용" 중 하나\n- 빈칸 채우기는 핵심 키워드를 ___로 표시\n\nJSON 배열만 출력:\n[{"type":"...","q":"..."},{"type":"...","q":"..."},{"type":"...","q":"..."}]`,
+    400,
+  );
+  try {
+    const arr = JSON.parse(raw.match(/\[[\s\S]*\]/)?.[0] || '[]');
+    if (Array.isArray(arr) && arr.length > 0) {
+      return arr.map(q => ({ id: Math.random().toString(36).slice(2, 9), type: q.type, q: q.q }));
+    }
+  } catch {}
+  return null; // caller falls back to makeQuestions
+}
+
 export async function generateSummary(title, notes) {
   return callLLM(
     `아티클 제목: "${title}"\n\n내 노트:\n${notes}\n\n위 노트를 바탕으로 핵심을 한 줄(30자 이내)로 요약해줘. 한국어로. 요약문만 출력해.`,

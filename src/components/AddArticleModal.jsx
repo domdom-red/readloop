@@ -3,7 +3,7 @@ import { M3 } from '../theme.js';
 import { Scrim, Btn, IconBtn, FormInput } from './ui.jsx';
 import { genId, domainOf, parseTags, makeQuestions } from '../utils.js';
 import { ALL_CATEGORIES } from '../data.js';
-import { generateSummary, getApiKey } from '../api.js';
+import { generateSummary, generateQuestions, getApiKey } from '../api.js';
 
 export default function AddArticleModal({ onClose, onAdd }) {
   const [title, setTitle] = useState('');
@@ -14,6 +14,7 @@ export default function AddArticleModal({ onClose, onAdd }) {
   const [tags, setTags] = useState('');
   const [cats, setCats] = useState([]);
   const [generating, setGenerating] = useState(false);
+  const [savingQuestions, setSavingQuestions] = useState(false);
   const [genError, setGenError] = useState('');
 
   useEffect(() => {
@@ -43,22 +44,36 @@ export default function AddArticleModal({ onClose, onAdd }) {
     }
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!title.trim()) return;
+    const t = title.trim();
+    const n = notes.trim();
+    const s = summary.trim();
+
+    let questions = makeQuestions(t);
+    if (getApiKey() && (n || s)) {
+      setSavingQuestions(true);
+      try {
+        const aiQuestions = await generateQuestions(t, n, s);
+        if (aiQuestions) questions = aiQuestions;
+      } catch {}
+      setSavingQuestions(false);
+    }
+
     onAdd({
       id: genId(),
-      title: title.trim(),
+      title: t,
       url: url.trim(),
       source: source.trim() || '직접 입력',
       savedAt: new Date().toISOString(),
       categories: cats,
       tags: parseTags(tags),
-      notes: notes.trim(),
-      summary: summary.trim(),
+      notes: n,
+      summary: s,
       score: 0,
       reviewCount: 0,
       lastReviewedAt: null,
-      questions: makeQuestions(title.trim()),
+      questions,
     });
     onClose();
   };
@@ -147,7 +162,9 @@ export default function AddArticleModal({ onClose, onAdd }) {
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Btn variant="text" onClick={onClose}>취소</Btn>
-          <Btn variant="filled" icon="add" onClick={submit} disabled={!title.trim()}>저장하기</Btn>
+          <Btn variant="filled" icon={savingQuestions ? 'hourglass_top' : 'add'} onClick={submit} disabled={!title.trim() || savingQuestions}>
+            {savingQuestions ? '질문 생성 중…' : '저장하기'}
+          </Btn>
         </div>
       </div>
     </>
