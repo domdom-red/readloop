@@ -1,0 +1,1145 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ReadLoop</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#6750A4" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="ReadLoop" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: Roboto, system-ui, sans-serif; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; line-height:1; user-select:none; display:inline-block; }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #CAC4D0; border-radius: 3px; }
+  textarea, input { font-family: Roboto, system-ui, sans-serif; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes slideUp { from { opacity:0; transform:translateY(24px) scale(0.97); } to { opacity:1; transform:translateY(0) scale(1); } }
+  @keyframes flipIn { from { opacity:0; transform:rotateX(-12deg) translateY(8px); } to { opacity:1; transform:rotateX(0) translateY(0); } }
+  .anim-fade { animation: fadeIn 0.2s ease; }
+  .anim-slide { animation: slideUp 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+  .anim-flip { animation: flipIn 0.3s ease; }
+</style>
+</head>
+<body style="background:#ECE6F0;">
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useReducer, useMemo, useRef } = React;
+
+// ─── Design Tokens ────────────────────────────────────────────────────────────
+const M3 = {
+  surface:'#FEF7FF', surfDim:'#DED8E1', surfContLow:'#F7F2FA',
+  surfCont:'#F3EDF7', surfContHigh:'#ECE6F0', surfContHighest:'#E6E0E9',
+  onSurface:'#1D1B20', onSurfaceVar:'#49454F', outline:'#79747E', outlineVar:'#CAC4D0',
+  primary:'#6750A4', onPrimary:'#FFFFFF', primaryCont:'#EADDFF', onPrimaryCont:'#21005D',
+  secondary:'#625B71', onSecondary:'#FFFFFF', secondaryCont:'#E8DEF8', onSecondaryCont:'#1D192B',
+  tertiary:'#7D5260', onTertiary:'#FFFFFF', tertiaryCont:'#FFD8E4', onTertiaryCont:'#31111D',
+  error:'#B3261E', errorCont:'#F9DEDC', onErrorCont:'#410E0B',
+  inverseSurface:'#322F35', inverseOnSurf:'#F5EFF7', inversePrimary:'#D0BCFF',
+};
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+const genId = () => Math.random().toString(36).slice(2, 9);
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+function timeAgo(iso) {
+  if (!iso) return '';
+  const diff = Math.floor((Date.now() - new Date(iso)) / 86400000);
+  if (diff === 0) {
+    const d = new Date(iso);
+    return `오늘 · ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
+  if (diff === 1) return '어제';
+  return `${diff}일 전`;
+}
+
+function domainOf(url) {
+  try { const h = new URL(url).hostname.replace(/^www\./,''); return h.split('.')[0]; }
+  catch { return ''; }
+}
+
+function makeQuestions(title) {
+  return [
+    { id: genId(), type: '핵심 요약', q: `"${title}"의 핵심 주장을 한 문장으로 정리하면?` },
+    { id: genId(), type: '업무 적용', q: `이 내용을 내 일에 적용한다면 가장 먼저 할 행동은?` },
+  ];
+}
+
+function parseTags(str) {
+  return str.split(',').map(t => t.trim()).filter(Boolean);
+}
+
+// ─── Initial Sample Data ──────────────────────────────────────────────────────
+const SAMPLE_ARTICLES = [
+  {
+    id:'a01', title:'AI-readable Design System은 왜 필요한가',
+    url:'', source:'서핏', savedAt: new Date(Date.now()-3600000*5).toISOString(),
+    categories:['디자인 시스템','AI'], tags:['AI-readable DS','Figma MCP','디자인 자동화'],
+    summary:'AI가 디자인 시스템을 직접 읽고 활용하기 위해서는 토큰·컴포넌트·문서가 기계가 해석 가능한 구조로 정의되어야 한다.',
+    score:82, reviewCount:2, lastReviewedAt: new Date(Date.now()-86400000*2).toISOString(),
+    questions:[
+      {id:'q01a',type:'핵심 요약',q:'AI-readable DS의 핵심 주장을 한 문장으로 정리하면?'},
+      {id:'q01b',type:'업무 적용',q:'VLLO 디자인 시스템에 적용한다면 어디서부터 시작할까?'},
+    ],
+  },
+  {
+    id:'a02', title:'pSEO: 페이지를 자동으로 만들면 검색은 따라온다',
+    url:'', source:'브런치', savedAt: new Date(Date.now()-86400000).toISOString(),
+    categories:['커머스 UX'], tags:['pSEO','상세페이지 자동화','커머스'],
+    summary:'programmatic SEO는 템플릿과 데이터를 결합해 수천 개의 페이지를 자동 생성하고 롱테일 검색 트래픽을 끌어온다.',
+    score:74, reviewCount:1, lastReviewedAt: new Date(Date.now()-86400000*3).toISOString(),
+    questions:[
+      {id:'q02a',type:'핵심 요약',q:'SEO와 pSEO의 결정적 차이는 무엇인가?'},
+      {id:'q02b',type:'업무 적용',q:'상세페이지 자동화에 적용 가능한 부분은?'},
+    ],
+  },
+  {
+    id:'a03', title:'Figma MCP — 디자인 자산을 모델 컨텍스트로',
+    url:'', source:'Figma Blog', savedAt: new Date(Date.now()-86400000*2).toISOString(),
+    categories:['디자인 시스템','AI 디자인 워크플로우'], tags:['Figma MCP','AI 워크플로우'],
+    summary:'Figma가 발표한 MCP 서버는 디자인 파일·라이브러리를 모델이 직접 조회할 수 있게 만들어 코드 생성 품질을 높인다.',
+    score:88, reviewCount:3, lastReviewedAt: new Date(Date.now()-86400000).toISOString(),
+    questions:[
+      {id:'q03a',type:'핵심 요약',q:'Figma MCP가 기존 워크플로우와 다른 점은?'},
+      {id:'q03b',type:'업무 적용',q:'MCP가 디자이너 역할에 어떤 변화를 줄까?'},
+    ],
+  },
+  {
+    id:'a04', title:'쿠폰 구조가 정교해진다 — PDP/PLP의 가격 표현',
+    url:'', source:'회사 기술 블로그', savedAt: new Date(Date.now()-86400000*3).toISOString(),
+    categories:['커머스 UX'], tags:['쿠폰','PDP','PLP','가격 표현'],
+    summary:'단순 할인율을 넘어 조건부 쿠폰·중첩 가능성·기간 제한이 UI 표현 방식을 결정하며 가격 정렬과 신뢰도의 관계가 중요하다.',
+    score:71, reviewCount:1, lastReviewedAt: new Date(Date.now()-86400000*4).toISOString(),
+    questions:[
+      {id:'q04a',type:'핵심 요약',q:'쿠폰 중첩을 보여주는 가장 명확한 UI 패턴은?'},
+      {id:'q04b',type:'업무 적용',q:'현재 서비스의 가격 표현에서 개선할 수 있는 점은?'},
+    ],
+  },
+  {
+    id:'a05', title:'AI는 디자이너의 결과물보다 사고를 바꾼다',
+    url:'', source:'뉴스레터', savedAt: new Date(Date.now()-86400000*4).toISOString(),
+    categories:['AI','UIUX 디자인'], tags:['디자이너 역할','AI 사고','검증 프로세스'],
+    summary:'AI는 디자이너의 산출물 속도보다 문제 정의·검증·의사결정 구조에 더 큰 영향을 미친다.',
+    score:65, reviewCount:1, lastReviewedAt: new Date(Date.now()-86400000*5).toISOString(),
+    questions:[
+      {id:'q05a',type:'핵심 요약',q:'AI가 디자이너 사고에 영향을 주는 3단계는?'},
+      {id:'q05b',type:'업무 적용',q:'내 일상 업무에서 사고 단계가 바뀐 지점은?'},
+    ],
+  },
+  {
+    id:'a06', title:'Claude Design — 대화로 만드는 인터페이스',
+    url:'', source:'서핏', savedAt: new Date(Date.now()-86400000*5).toISOString(),
+    categories:['AI','AI 디자인 워크플로우'], tags:['Claude','대화형 UI 생성'],
+    summary:'대화로 디자인을 빠르게 생성·수정하는 워크플로우. 디자이너는 결과보다 프롬프트와 의도 설계에 집중한다.',
+    score:80, reviewCount:2, lastReviewedAt: new Date(Date.now()-86400000*6).toISOString(),
+    questions:[
+      {id:'q06a',type:'핵심 요약',q:'의도 중심 워크플로우가 결과 중심과 다른 점은?'},
+      {id:'q06b',type:'업무 적용',q:'Claude Design을 업무에 도입했을 때 첫 번째 실험은?'},
+    ],
+  },
+];
+
+const ALL_CATEGORIES = ['AI','UIUX 디자인','디자인 시스템','커머스 UX','AI 디자인 워크플로우','콘텐츠/크리에이터','뉴스/시장 흐름','디자이너 커리어'];
+
+// ─── State Management ─────────────────────────────────────────────────────────
+const STORAGE_KEY = 'readloop_v2';
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { articles: SAMPLE_ARTICLES, sessions: [], streak: 3, lastActiveDate: new Date(Date.now()-86400000).toISOString().slice(0,10) };
+}
+
+function saveState(s) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {}
+}
+
+function reducer(state, action) {
+  let next;
+  switch (action.type) {
+    case 'ADD_ARTICLE': {
+      const art = action.article;
+      next = { ...state, articles: [art, ...state.articles] };
+      break;
+    }
+    case 'DELETE_ARTICLE': {
+      next = { ...state, articles: state.articles.filter(a => a.id !== action.id) };
+      break;
+    }
+    case 'COMPLETE_REVIEW': {
+      // results: [{articleId, questionId, rating: 'good'|'again'}]
+      const byArticle = {};
+      action.results.forEach(r => {
+        if (!byArticle[r.articleId]) byArticle[r.articleId] = [];
+        byArticle[r.articleId].push(r.rating);
+      });
+      const articles = state.articles.map(a => {
+        const ratings = byArticle[a.id];
+        if (!ratings) return a;
+        const good = ratings.filter(r => r === 'good').length;
+        const ratio = good / ratings.length;
+        const newScore = Math.round(a.reviewCount > 0
+          ? (a.score * a.reviewCount + ratio * 100) / (a.reviewCount + 1)
+          : ratio * 100);
+        return { ...a, score: newScore, reviewCount: a.reviewCount + 1, lastReviewedAt: new Date().toISOString() };
+      });
+      const t = todayStr();
+      const yesterday = new Date(Date.now()-86400000).toISOString().slice(0,10);
+      const streak = state.lastActiveDate === t ? state.streak
+        : state.lastActiveDate === yesterday ? state.streak + 1 : 1;
+      const session = { id: genId(), date: new Date().toISOString(), cards: action.results };
+      next = { ...state, articles, sessions: [...state.sessions, session], streak, lastActiveDate: t };
+      break;
+    }
+    default: next = state;
+  }
+  saveState(next);
+  return next;
+}
+
+// ─── Computed helpers ─────────────────────────────────────────────────────────
+function computeStats(articles) {
+  const reviewed = articles.filter(a => a.reviewCount > 0);
+  const avgScore = reviewed.length ? Math.round(reviewed.reduce((s,a) => s+a.score, 0) / reviewed.length) : 0;
+  const weekAgo = Date.now() - 86400000*7;
+  const weekArticles = articles.filter(a => new Date(a.savedAt) > weekAgo).length;
+  const weekReviewed = reviewed.filter(a => a.lastReviewedAt && new Date(a.lastReviewedAt) > weekAgo).length;
+  return { total: articles.length, reviewedCount: reviewed.length, avgScore, weekArticles, weekReviewed };
+}
+
+function getTodayCards(articles) {
+  const t = todayStr();
+  const notToday = articles.filter(a => !a.lastReviewedAt || a.lastReviewedAt.slice(0,10) !== t);
+  const sorted = [...notToday].sort((a,b) => {
+    if (!a.lastReviewedAt) return -1;
+    if (!b.lastReviewedAt) return 1;
+    return new Date(a.lastReviewedAt) - new Date(b.lastReviewedAt);
+  });
+  const cards = [];
+  for (const a of sorted) {
+    if (cards.length >= 6) break;
+    a.questions.forEach(q => { if (cards.length < 6) cards.push({ ...q, articleId: a.id, articleTitle: a.title, summary: a.summary }); });
+  }
+  return cards;
+}
+
+// ─── Primitive Components ─────────────────────────────────────────────────────
+function Icon({ name, size=24, color, fill=0, weight=400, style:sx }) {
+  return <span className="material-symbols-outlined" style={{ fontSize:size, color, fontVariationSettings:`'FILL' ${fill},'wght' ${weight},'GRAD' 0,'opsz' ${size}`, ...sx }}>{name}</span>;
+}
+
+function IconBtn({ name, onClick, color=M3.onSurfaceVar, badge, size=40 }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <button onClick={onClick} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+      style={{ width:size, height:size, borderRadius:'50%', border:0, cursor:'pointer', flexShrink:0,
+        background: hov ? 'rgba(29,27,32,0.08)' : 'transparent',
+        display:'inline-flex', alignItems:'center', justifyContent:'center', position:'relative' }}>
+      <Icon name={name} color={color} size={22} />
+      {badge && <span style={{ position:'absolute', top:7, right:7, width:8, height:8, borderRadius:'50%', background:M3.error, border:`2px solid ${M3.surface}` }} />}
+    </button>
+  );
+}
+
+function Btn({ variant='filled', icon, children, onClick, disabled, style:sx, fullWidth }) {
+  const [hov, setHov] = useState(false);
+  const v = { filled:{bg:M3.primary,fg:M3.onPrimary}, tonal:{bg:M3.secondaryCont,fg:M3.onSecondaryCont},
+    outlined:{bg:'transparent',fg:M3.primary,border:`1px solid ${M3.outline}`}, text:{bg:'transparent',fg:M3.primary} }[variant];
+  return (
+    <button onClick={disabled?undefined:onClick} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+      style={{ height:40, padding:icon?'0 20px 0 16px':'0 24px', borderRadius:9999,
+        border:v.border||0, cursor:disabled?'not-allowed':'pointer',
+        background:v.bg, color:v.fg, opacity:disabled?0.4:hov?0.88:1,
+        fontFamily:'Roboto,system-ui', fontSize:14, fontWeight:500, letterSpacing:0.1,
+        display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8,
+        transition:'opacity 0.12s', width:fullWidth?'100%':undefined, ...sx }}>
+      {icon && <Icon name={icon} size={18} color="currentColor" />}
+      {children}
+    </button>
+  );
+}
+
+function Chip({ selected, onClick, children }) {
+  return (
+    <button onClick={onClick} style={{ height:32, padding:'0 16px', borderRadius:8, cursor:'pointer',
+      border: selected ? 0 : `1px solid ${M3.outlineVar}`,
+      background: selected ? M3.secondaryCont : 'transparent',
+      color: selected ? M3.onSecondaryCont : M3.onSurfaceVar,
+      fontFamily:'Roboto,system-ui', fontSize:14, fontWeight:500,
+      display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap' }}>
+      {selected && <Icon name="check" size={16} color="currentColor" />}
+      {children}
+    </button>
+  );
+}
+
+function Scrim({ onClick, z=200 }) {
+  return <div onClick={onClick} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:z }} />;
+}
+
+function FormInput({ label, value, onChange, placeholder, multiline, required }) {
+  const style = {
+    width:'100%', padding:'12px 14px', borderRadius:8, fontSize:14, color:M3.onSurface,
+    border:`1px solid ${M3.outlineVar}`, background:M3.surface, outline:'none',
+    resize: multiline ? 'vertical' : 'none', fontFamily:'Roboto,system-ui', lineHeight:1.5,
+  };
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+      <label style={{ fontSize:12, fontWeight:500, color:M3.onSurfaceVar, letterSpacing:0.4 }}>
+        {label}{required && <span style={{ color:M3.error }}> *</span>}
+      </label>
+      {multiline
+        ? <textarea rows={3} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={style} />
+        : <input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={style} />}
+    </div>
+  );
+}
+
+// ─── Add Article Modal ────────────────────────────────────────────────────────
+function AddArticleModal({ onClose, onAdd }) {
+  const [title, setTitle] = useState('');
+  const [url, setUrl] = useState('');
+  const [source, setSource] = useState('');
+  const [summary, setSummary] = useState('');
+  const [tags, setTags] = useState('');
+  const [cats, setCats] = useState([]);
+
+  useEffect(() => {
+    if (url) {
+      const d = domainOf(url);
+      if (d && !source) setSource(d);
+    }
+  }, [url]);
+
+  const toggleCat = c => setCats(prev => prev.includes(c) ? prev.filter(x=>x!==c) : [...prev, c]);
+
+  const submit = () => {
+    if (!title.trim()) return;
+    const art = {
+      id: genId(), title: title.trim(), url: url.trim(), source: source.trim() || '직접 입력',
+      savedAt: new Date().toISOString(), categories: cats, tags: parseTags(tags),
+      summary: summary.trim(), score: 0, reviewCount: 0, lastReviewedAt: null,
+      questions: makeQuestions(title.trim()),
+    };
+    onAdd(art);
+    onClose();
+  };
+
+  return (
+    <>
+      <Scrim onClick={onClose} z={300} />
+      <div className="anim-slide" style={{
+        position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
+        zIndex:400, width:560, maxWidth:'calc(100vw - 32px)', maxHeight:'90vh',
+        background:M3.surface, borderRadius:28, padding:28, display:'flex', flexDirection:'column', gap:20,
+        overflow:'auto',
+      }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <div style={{ fontSize:22, fontWeight:500, color:M3.onSurface }}>아티클 추가</div>
+          <IconBtn name="close" onClick={onClose} />
+        </div>
+
+        <FormInput label="제목" value={title} onChange={setTitle} placeholder="아티클 제목을 입력하세요" required />
+        <FormInput label="URL" value={url} onChange={setUrl} placeholder="https://..." />
+        <FormInput label="출처" value={source} onChange={setSource} placeholder="서핏, 브런치, 뉴스레터 등" />
+        <FormInput label="요약 / 메모" value={summary} onChange={setSummary} placeholder="핵심 내용이나 읽으면서 느낀 점을 적어두세요" multiline />
+        <FormInput label="태그 (쉼표로 구분)" value={tags} onChange={setTags} placeholder="디자인 시스템, AI, Figma MCP" />
+
+        <div>
+          <div style={{ fontSize:12, fontWeight:500, color:M3.onSurfaceVar, letterSpacing:0.4, marginBottom:8 }}>카테고리</div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+            {ALL_CATEGORIES.map(c => (
+              <button key={c} onClick={()=>toggleCat(c)} style={{
+                height:30, padding:'0 14px', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500,
+                border: cats.includes(c) ? 0 : `1px solid ${M3.outlineVar}`,
+                background: cats.includes(c) ? M3.primaryCont : 'transparent',
+                color: cats.includes(c) ? M3.onPrimaryCont : M3.onSurfaceVar,
+              }}>{c}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:4 }}>
+          <Btn variant="text" onClick={onClose}>취소</Btn>
+          <Btn variant="filled" icon="add" onClick={submit} disabled={!title.trim()}>저장하기</Btn>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Article Detail ───────────────────────────────────────────────────────────
+function ArticleDetail({ article: a, onClose, onDelete }) {
+  return (
+    <>
+      <Scrim onClick={onClose} z={300} />
+      <div className="anim-slide" style={{
+        position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
+        zIndex:400, width:600, maxWidth:'calc(100vw - 32px)', maxHeight:'88vh',
+        background:M3.surface, borderRadius:28, padding:28, display:'flex', flexDirection:'column', gap:16, overflow:'auto',
+      }}>
+        <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:12, color:M3.onSurfaceVar, marginBottom:4 }}>{a.source} · {timeAgo(a.savedAt)}</div>
+            <div style={{ fontSize:20, fontWeight:500, color:M3.onSurface, lineHeight:'28px' }}>{a.title}</div>
+          </div>
+          <IconBtn name="close" onClick={onClose} />
+        </div>
+
+        {a.url && (
+          <a href={a.url} target="_blank" rel="noopener noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:13, color:M3.primary, textDecoration:'none' }}>
+            <Icon name="open_in_new" size={16} color={M3.primary} />원문 보기
+          </a>
+        )}
+
+        {a.summary && (
+          <div style={{ background:M3.surfContLow, borderRadius:12, padding:16 }}>
+            <div style={{ fontSize:11, fontWeight:600, color:M3.onSurfaceVar, letterSpacing:0.8, textTransform:'uppercase', marginBottom:6 }}>요약</div>
+            <div style={{ fontSize:14, lineHeight:'22px', color:M3.onSurface }}>{a.summary}</div>
+          </div>
+        )}
+
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          {a.categories.map(c => <span key={c} style={{ fontSize:12, padding:'4px 10px', borderRadius:6, background:M3.primaryCont, color:M3.onPrimaryCont, fontWeight:500 }}>{c}</span>)}
+          {a.tags.map(t => <span key={t} style={{ fontSize:12, padding:'4px 10px', borderRadius:6, background:M3.surfContHigh, color:M3.onSurfaceVar }}>{t}</span>)}
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
+          {[
+            { k:'이해도 점수', v: a.reviewCount > 0 ? `${a.score}점` : '미복습', icon:'insights' },
+            { k:'복습 횟수', v:`${a.reviewCount}회`, icon:'replay' },
+            { k:'마지막 복습', v: a.lastReviewedAt ? timeAgo(a.lastReviewedAt) : '없음', icon:'schedule' },
+          ].map(s => (
+            <div key={s.k} style={{ background:M3.surfContLow, borderRadius:12, padding:'12px 14px' }}>
+              <Icon name={s.icon} size={18} color={M3.primary} />
+              <div style={{ fontSize:17, fontWeight:500, color:M3.onSurface, marginTop:8 }}>{s.v}</div>
+              <div style={{ fontSize:11, color:M3.onSurfaceVar, marginTop:2 }}>{s.k}</div>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <div style={{ fontSize:12, fontWeight:600, color:M3.onSurfaceVar, letterSpacing:0.8, textTransform:'uppercase', marginBottom:8 }}>복습 질문</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {a.questions.map(q => (
+              <div key={q.id} style={{ padding:'12px 14px', background:M3.surfContLow, borderRadius:12, display:'flex', gap:10, alignItems:'flex-start' }}>
+                <span style={{ fontSize:11, padding:'2px 8px', borderRadius:6, background:M3.secondaryCont, color:M3.onSecondaryCont, fontWeight:500, whiteSpace:'nowrap', marginTop:1 }}>{q.type}</span>
+                <div style={{ fontSize:14, lineHeight:'20px', color:M3.onSurface }}>{q.q}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display:'flex', gap:8, justifyContent:'space-between', marginTop:4 }}>
+          <Btn variant="text" icon="delete" onClick={()=>{onDelete(a.id);onClose();}} style={{ color:M3.error }}>삭제</Btn>
+          <Btn variant="filled" icon="close" onClick={onClose}>닫기</Btn>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Review Session Overlay ───────────────────────────────────────────────────
+function ReviewSession({ cards, onClose, onComplete }) {
+  const [idx, setIdx] = useState(0);
+  const [phase, setPhase] = useState('question'); // 'question' | 'rate'
+  const [results, setResults] = useState([]);
+  const [done, setDone] = useState(false);
+
+  const card = cards[idx];
+  const progress = ((idx) / cards.length) * 100;
+  const goodCount = results.filter(r=>r.rating==='good').length;
+
+  const reveal = () => setPhase('rate');
+  const rate = (rating) => {
+    const newResults = [...results, { articleId: card.articleId, questionId: card.id, rating }];
+    setResults(newResults);
+    if (idx + 1 >= cards.length) {
+      setDone(true);
+      onComplete(newResults);
+    } else {
+      setIdx(idx+1);
+      setPhase('question');
+    }
+  };
+
+  if (done) {
+    const pct = Math.round((goodCount / cards.length) * 100);
+    return (
+      <div style={{ position:'fixed', inset:0, zIndex:500, background:M3.primary, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:24 }}>
+        <div className="anim-slide" style={{ textAlign:'center', color:M3.onPrimary }}>
+          <div style={{ fontSize:56 }}>🎉</div>
+          <div style={{ fontSize:28, fontWeight:500, marginTop:16 }}>복습 완료!</div>
+          <div style={{ fontSize:16, opacity:0.85, marginTop:8 }}>{cards.length}장 중 {goodCount}장 이해</div>
+          <div style={{ fontSize:48, fontWeight:300, marginTop:24, letterSpacing:-1 }}>{pct}점</div>
+          <div style={{ fontSize:14, opacity:0.75, marginTop:4 }}>이번 세션 이해도</div>
+          <button onClick={onClose} style={{
+            marginTop:32, height:48, padding:'0 32px', borderRadius:9999,
+            background:M3.onPrimary, color:M3.primary, border:0, cursor:'pointer',
+            fontSize:16, fontWeight:500, fontFamily:'Roboto,system-ui',
+          }}>완료</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:500, background:M3.inverseSurface, display:'flex', flexDirection:'column' }}>
+      {/* Header */}
+      <div style={{ padding:'16px 24px', display:'flex', alignItems:'center', gap:16 }}>
+        <button onClick={onClose} style={{ background:'transparent', border:0, cursor:'pointer', color:M3.inverseOnSurf, display:'flex', alignItems:'center', justifyContent:'center', width:40, height:40, borderRadius:'50%' }}>
+          <Icon name="close" size={22} color={M3.inverseOnSurf} />
+        </button>
+        <div style={{ flex:1, height:4, background:'rgba(255,255,255,0.2)', borderRadius:2, overflow:'hidden' }}>
+          <div style={{ height:'100%', width:`${progress}%`, background:M3.inversePrimary, borderRadius:2, transition:'width 0.3s ease' }} />
+        </div>
+        <div style={{ fontSize:14, color:'rgba(255,255,255,0.7)', minWidth:40, textAlign:'right' }}>{idx+1} / {cards.length}</div>
+      </div>
+
+      {/* Card */}
+      <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'0 24px 32px' }}>
+        <div key={`${idx}-${phase}`} className="anim-flip" style={{
+          width:'100%', maxWidth:540, background:M3.surface, borderRadius:24,
+          padding:'32px 28px', display:'flex', flexDirection:'column', gap:16,
+        }}>
+          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+            <span style={{ fontSize:11, padding:'3px 10px', borderRadius:6, background:M3.secondaryCont, color:M3.onSecondaryCont, fontWeight:600, letterSpacing:0.4 }}>{card.type}</span>
+            <span style={{ fontSize:12, color:M3.onSurfaceVar, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{card.articleTitle}</span>
+          </div>
+
+          <div style={{ fontSize:20, lineHeight:'30px', fontWeight:500, color:M3.onSurface }}>{card.q}</div>
+
+          {phase === 'question' && (
+            <div style={{ marginTop:8, padding:'12px 14px', borderRadius:10, background:M3.surfContLow, fontSize:13, color:M3.onSurfaceVar }}>
+              💭 잠깐 생각해보세요. 준비되면 아래 버튼을 눌러주세요.
+            </div>
+          )}
+
+          {phase === 'rate' && card.summary && (
+            <div style={{ marginTop:8, padding:'14px 16px', borderRadius:12, background:M3.primaryCont, borderLeft:`3px solid ${M3.primary}` }}>
+              <div style={{ fontSize:11, fontWeight:600, color:M3.primary, marginBottom:6, letterSpacing:0.4 }}>아티클 핵심 내용</div>
+              <div style={{ fontSize:14, lineHeight:'21px', color:M3.onPrimaryCont }}>{card.summary}</div>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div style={{ marginTop:24, display:'flex', flexDirection:'column', alignItems:'center', gap:12, width:'100%', maxWidth:540 }}>
+          {phase === 'question' ? (
+            <button onClick={reveal} style={{
+              height:52, padding:'0 40px', borderRadius:9999, border:0, cursor:'pointer',
+              background:M3.inversePrimary, color:M3.onPrimaryCont,
+              fontSize:16, fontWeight:500, fontFamily:'Roboto,system-ui',
+              display:'flex', alignItems:'center', gap:8,
+            }}>
+              <Icon name="lightbulb" size={20} color={M3.onPrimaryCont} />
+              답 확인하기
+            </button>
+          ) : (
+            <div style={{ display:'flex', gap:12, width:'100%' }}>
+              <button onClick={()=>rate('again')} style={{
+                flex:1, height:52, borderRadius:9999, border:`1px solid rgba(255,255,255,0.3)`,
+                cursor:'pointer', background:'transparent', color:M3.inverseOnSurf,
+                fontSize:15, fontWeight:500, fontFamily:'Roboto,system-ui',
+                display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+              }}>
+                <Icon name="replay" size={18} color={M3.inverseOnSurf} />
+                🔄 다시 볼게
+              </button>
+              <button onClick={()=>rate('good')} style={{
+                flex:1, height:52, borderRadius:9999, border:0,
+                cursor:'pointer', background:M3.inversePrimary, color:M3.onPrimaryCont,
+                fontSize:15, fontWeight:500, fontFamily:'Roboto,system-ui',
+                display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+              }}>
+                💪 알겠어!
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Article Card (shared) ────────────────────────────────────────────────────
+function ArticleCard({ a, onClick }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <div onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} onClick={onClick}
+      style={{ background:M3.surface, border:`1px solid ${hov?M3.outline:M3.outlineVar}`,
+        borderRadius:16, padding:16, display:'flex', flexDirection:'column', gap:10,
+        cursor:'pointer', transition:'border-color 0.12s, box-shadow 0.12s',
+        boxShadow: hov ? '0 2px 10px rgba(0,0,0,0.09)' : 'none' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        <div style={{ width:28, height:28, borderRadius:8, background:M3.surfContHigh, color:M3.onSurfaceVar, fontSize:11, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{a.source.slice(0,2)}</div>
+        <div style={{ fontSize:12, color:M3.onSurfaceVar }}>{a.source} · {timeAgo(a.savedAt)}</div>
+      </div>
+      <div style={{ fontSize:15, lineHeight:'22px', fontWeight:500, color:M3.onSurface }}>{a.title}</div>
+      {a.summary && <div style={{ fontSize:13, lineHeight:'19px', color:M3.onSurfaceVar, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{a.summary}</div>}
+      <div style={{ marginTop:'auto', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+          {a.tags.slice(0,2).map(t => <span key={t} style={{ fontSize:11, padding:'2px 8px', borderRadius:6, background:M3.surfContHigh, color:M3.onSurfaceVar }}>{t}</span>)}
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:12, color:M3.onSurfaceVar, flexShrink:0 }}>
+          <Icon name="quiz" size={14} color={M3.onSurfaceVar} />
+          {a.questions.length}
+          {a.reviewCount > 0 && <span style={{ marginLeft:4, fontWeight:500, color: a.score>=80?M3.primary:M3.onSurfaceVar }}>· {a.score}점</span>}
+          {a.reviewCount === 0 && <span style={{ marginLeft:4, color:M3.onSurfaceVar }}>· 미복습</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Sidebar (web only) ───────────────────────────────────────────────────────
+function WebSidebar({ todayCards, streak, onStartReview, weekRecap }) {
+  const allDone = todayCards.length === 0;
+  return (
+    <aside style={{ width:300, flexShrink:0, background:M3.surfContLow, borderLeft:`1px solid ${M3.outlineVar}`, padding:'28px 22px', overflow:'auto', display:'flex', flexDirection:'column' }}>
+      <div style={{ fontSize:11, fontWeight:600, letterSpacing:1.2, color:M3.onSurfaceVar, textTransform:'uppercase' }}>오늘의 복습</div>
+
+      {allDone ? (
+        <div style={{ marginTop:12, padding:'16px', background:M3.primaryCont, borderRadius:14, textAlign:'center' }}>
+          <div style={{ fontSize:28 }}>✅</div>
+          <div style={{ fontSize:14, fontWeight:500, color:M3.onPrimaryCont, marginTop:6 }}>오늘 복습 완료!</div>
+          <div style={{ fontSize:12, color:M3.onPrimaryCont, opacity:0.75, marginTop:4 }}>내일 새 카드가 준비돼요</div>
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize:20, fontWeight:500, color:M3.onSurface, margin:'4px 0 14px' }}>{todayCards.length}개의 카드</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {todayCards.slice(0,3).map(c => (
+              <div key={c.id} style={{ background:M3.surface, borderRadius:12, padding:'12px 14px', border:`1px solid ${M3.outlineVar}` }}>
+                <div style={{ fontSize:11, color:M3.primary, fontWeight:600, letterSpacing:0.4 }}>{c.type}</div>
+                <div style={{ fontSize:13, lineHeight:'19px', color:M3.onSurface, marginTop:3 }}>{c.q}</div>
+                <div style={{ fontSize:11, color:M3.onSurfaceVar, marginTop:6, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>from · {c.articleTitle}</div>
+              </div>
+            ))}
+          </div>
+          <Btn variant="filled" icon="play_arrow" onClick={onStartReview} style={{ marginTop:14, width:'100%', justifyContent:'center' }}>복습 시작하기</Btn>
+        </>
+      )}
+
+      <div style={{ height:1, background:M3.outlineVar, margin:'24px 0 18px' }} />
+
+      <div style={{ fontSize:11, fontWeight:600, letterSpacing:1.2, color:M3.onSurfaceVar, textTransform:'uppercase' }}>이번 주 인사이트</div>
+      <ul style={{ margin:'10px 0 0', padding:0, listStyle:'none', display:'flex', flexDirection:'column', gap:10 }}>
+        {weekRecap.map((t,i) => (
+          <li key={i} style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
+            <div style={{ width:20, height:20, borderRadius:6, background:M3.primaryCont, color:M3.onPrimaryCont, fontSize:12, fontWeight:600, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginTop:1 }}>{i+1}</div>
+            <div style={{ fontSize:13, lineHeight:'18px', color:M3.onSurface }}>{t}</div>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  );
+}
+
+// ─── Search View ──────────────────────────────────────────────────────────────
+function SearchView({ articles, onOpenArticle }) {
+  const [q, setQ] = useState('');
+  const ref = useRef();
+  useEffect(() => { ref.current?.focus(); }, []);
+  const results = useMemo(() => {
+    if (!q.trim()) return [];
+    const lower = q.toLowerCase();
+    return articles.filter(a =>
+      a.title.toLowerCase().includes(lower) ||
+      a.summary.toLowerCase().includes(lower) ||
+      a.tags.some(t => t.toLowerCase().includes(lower)) ||
+      a.categories.some(c => c.toLowerCase().includes(lower)) ||
+      a.source.toLowerCase().includes(lower)
+    );
+  }, [q, articles]);
+
+  return (
+    <div style={{ padding:'32px', maxWidth:800 }}>
+      <h2 style={{ margin:'0 0 20px', fontSize:24, fontWeight:500, color:M3.onSurface }}>검색</h2>
+      <div style={{ display:'flex', alignItems:'center', gap:10, background:M3.surfContHigh, borderRadius:12, padding:'0 16px', height:52, marginBottom:24 }}>
+        <Icon name="search" size={22} color={M3.onSurfaceVar} />
+        <input ref={ref} value={q} onChange={e=>setQ(e.target.value)}
+          placeholder="제목, 요약, 태그, 카테고리로 검색…"
+          style={{ flex:1, border:0, background:'transparent', fontSize:16, color:M3.onSurface, outline:'none', fontFamily:'Roboto,system-ui' }} />
+        {q && <button onClick={()=>setQ('')} style={{ background:'transparent', border:0, cursor:'pointer', display:'flex', alignItems:'center' }}><Icon name="close" size={18} color={M3.onSurfaceVar} /></button>}
+      </div>
+      {q && (
+        <div style={{ fontSize:13, color:M3.onSurfaceVar, marginBottom:16 }}>
+          {results.length > 0 ? `${results.length}개 결과` : '검색 결과가 없어요'}
+        </div>
+      )}
+      <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+        {results.map(a => <ArticleCard key={a.id} a={a} onClick={()=>onOpenArticle(a)} />)}
+      </div>
+      {!q && (
+        <div style={{ textAlign:'center', marginTop:60, color:M3.onSurfaceVar }}>
+          <Icon name="manage_search" size={48} color={M3.outlineVar} />
+          <div style={{ marginTop:12, fontSize:16 }}>저장한 아티클을 검색해보세요</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Recap View ───────────────────────────────────────────────────────────────
+function RecapView({ articles, sessions, streak }) {
+  const stats = computeStats(articles);
+  const weekAgo = Date.now() - 86400000*7;
+  const weekSessions = sessions.filter(s => new Date(s.date) > weekAgo);
+  const topCats = useMemo(() => {
+    const cnt = {};
+    articles.filter(a => new Date(a.savedAt) > weekAgo).forEach(a => a.categories.forEach(c => { cnt[c] = (cnt[c]||0)+1; }));
+    return Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k])=>k);
+  }, [articles]);
+
+  return (
+    <div style={{ padding:'32px', maxWidth:800 }}>
+      <h2 style={{ margin:'0 0 24px', fontSize:24, fontWeight:500, color:M3.onSurface }}>이번 주 리캡</h2>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14, marginBottom:28 }}>
+        {[
+          { k:'저장한 아티클', v:`${stats.total}개`, sub:`이번 주 +${stats.weekArticles}`, icon:'bookmark', bg:M3.primaryCont, fg:M3.onPrimaryCont },
+          { k:'복습 세션', v:`${weekSessions.length}회`, sub:`이번 주`, icon:'auto_stories', bg:M3.secondaryCont, fg:M3.onSecondaryCont },
+          { k:'연속 학습', v:`${streak}일`, sub:'🔥 streak', icon:'local_fire_department', bg:M3.tertiaryCont, fg:M3.onTertiaryCont },
+          { k:'평균 이해도', v: stats.avgScore > 0 ? `${stats.avgScore}점` : '-', sub:'복습 완료 기준', icon:'insights', bg:M3.surfContHigh, fg:M3.onSurface },
+          { k:'복습한 아티클', v:`${stats.reviewedCount}개`, sub:`전체 ${stats.total}개 중`, icon:'check_circle', bg:M3.primaryCont, fg:M3.onPrimaryCont },
+          { k:'남은 복습', v:`${stats.total - stats.reviewedCount}개`, sub:'아직 안 읽은 아티클', icon:'pending', bg:M3.surfContHigh, fg:M3.onSurface },
+        ].map(s => (
+          <div key={s.k} style={{ background:s.bg, color:s.fg, borderRadius:16, padding:16, display:'flex', flexDirection:'column', gap:10 }}>
+            <Icon name={s.icon} size={20} color="currentColor" />
+            <div style={{ fontSize:26, fontWeight:400, letterSpacing:-0.3 }}>{s.v}</div>
+            <div style={{ fontSize:12, opacity:0.85 }}>{s.k} · {s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {topCats.length > 0 && (
+        <div style={{ marginBottom:24 }}>
+          <div style={{ fontSize:14, fontWeight:600, color:M3.onSurfaceVar, letterSpacing:0.8, textTransform:'uppercase', marginBottom:12 }}>이번 주 많이 읽은 카테고리</div>
+          <div style={{ display:'flex', gap:8 }}>
+            {topCats.map((c,i) => (
+              <div key={c} style={{ padding:'8px 16px', borderRadius:10, background:i===0?M3.primary:M3.surfContHigh, color:i===0?M3.onPrimary:M3.onSurface, fontSize:14, fontWeight:500 }}>
+                {i===0 && '🏆 '}{c}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div style={{ fontSize:14, fontWeight:600, color:M3.onSurfaceVar, letterSpacing:0.8, textTransform:'uppercase', marginBottom:12 }}>점수별 아티클</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {[...articles].filter(a=>a.reviewCount>0).sort((a,b)=>b.score-a.score).slice(0,5).map(a => (
+            <div key={a.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', background:M3.surfContLow, borderRadius:12 }}>
+              <div style={{ width:40, height:40, borderRadius:10, background: a.score>=80?M3.primaryCont:M3.surfContHigh, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:600, color: a.score>=80?M3.primary:M3.onSurface, flexShrink:0 }}>{a.score}</div>
+              <div style={{ flex:1, fontSize:14, color:M3.onSurface, fontWeight:500 }}>{a.title}</div>
+              <div style={{ fontSize:12, color:M3.onSurfaceVar }}>{a.source}</div>
+            </div>
+          ))}
+          {articles.filter(a=>a.reviewCount>0).length === 0 && (
+            <div style={{ textAlign:'center', padding:'32px', color:M3.onSurfaceVar }}>아직 복습한 아티클이 없어요</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Review Queue View ────────────────────────────────────────────────────────
+function ReviewQueueView({ todayCards, onStartReview }) {
+  if (todayCards.length === 0) {
+    return (
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:16, color:M3.onSurfaceVar }}>
+        <Icon name="check_circle" size={56} color={M3.primary} fill={1} />
+        <div style={{ fontSize:22, fontWeight:500, color:M3.onSurface }}>오늘 복습 완료!</div>
+        <div style={{ fontSize:15 }}>내일 새 카드가 준비돼요 👏</div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ padding:'32px', maxWidth:700 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24 }}>
+        <h2 style={{ margin:0, fontSize:24, fontWeight:500, color:M3.onSurface }}>오늘의 복습 · {todayCards.length}장</h2>
+        <Btn variant="filled" icon="play_arrow" onClick={onStartReview}>복습 시작</Btn>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+        {todayCards.map((c,i) => (
+          <div key={c.id} style={{ padding:'14px 18px', background:M3.surface, borderRadius:14, border:`1px solid ${M3.outlineVar}`, display:'flex', gap:12, alignItems:'flex-start' }}>
+            <div style={{ width:28, height:28, borderRadius:8, background:M3.primaryCont, color:M3.onPrimaryCont, fontSize:13, fontWeight:600, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginTop:1 }}>{i+1}</div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:11, color:M3.primary, fontWeight:600, letterSpacing:0.4, marginBottom:3 }}>{c.type}</div>
+              <div style={{ fontSize:15, fontWeight:500, color:M3.onSurface, lineHeight:'22px' }}>{c.q}</div>
+              <div style={{ fontSize:12, color:M3.onSurfaceVar, marginTop:5 }}>from · {c.articleTitle}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Web Layout ───────────────────────────────────────────────────────────────
+function WebApp({ state, dispatch, forceView }) {
+  const [activeNav, setActiveNav] = useState('Library');
+  const [activeTag, setActiveTag] = useState('all');
+  const [showAdd, setShowAdd] = useState(false);
+  const [selectedArticle, setSelectedArticle] = useState(null);
+  const [reviewSession, setReviewSession] = useState(null);
+
+  const stats = useMemo(() => computeStats(state.articles), [state.articles]);
+  const todayCards = useMemo(() => getTodayCards(state.articles), [state.articles]);
+
+  const filtered = useMemo(() => {
+    if (activeTag === 'all') return state.articles;
+    const label = ALL_CATEGORIES.find(c => c === activeTag);
+    return state.articles.filter(a => a.categories.includes(label));
+  }, [state.articles, activeTag]);
+
+  const cats = useMemo(() => {
+    const used = new Set(state.articles.flatMap(a => a.categories));
+    return ALL_CATEGORIES.filter(c => used.has(c));
+  }, [state.articles]);
+
+  const startReview = () => {
+    const cards = getTodayCards(state.articles);
+    if (cards.length) setReviewSession(cards);
+  };
+
+  const weekRecap = useMemo(() => {
+    const topCats = (() => {
+      const cnt = {};
+      const wk = Date.now() - 86400000*7;
+      state.articles.filter(a=>new Date(a.savedAt)>wk).forEach(a=>a.categories.forEach(c=>{cnt[c]=(cnt[c]||0)+1;}));
+      return Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k])=>k);
+    })();
+    const hi = [...state.articles].filter(a=>a.reviewCount>0).sort((a,b)=>b.score-a.score)[0];
+    return [
+      topCats.length ? `이번 주 가장 많이 읽은 주제: ${topCats[0]}` : '이번 주 아티클을 추가해보세요',
+      hi ? `이해도 최고 아티클: "${hi.title.slice(0,20)}…" (${hi.score}점)` : '복습을 시작하면 인사이트가 쌓여요',
+      `전체 ${state.articles.length}개 중 ${state.articles.filter(a=>a.reviewCount>0).length}개 복습 완료`,
+    ];
+  }, [state.articles]);
+
+  return (
+    <div style={{ width:'100%', height:'100vh', display:'flex', flexDirection:'column', background:M3.surface, overflow:'hidden' }}>
+      {/* Header */}
+      <header style={{ height:64, padding:'0 28px', display:'flex', alignItems:'center', gap:16, borderBottom:`1px solid ${M3.outlineVar}`, background:M3.surface, flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <div style={{ width:30, height:30, borderRadius:9, background:M3.primary, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <Icon name="autorenew" size={18} color={M3.onPrimary} weight={600} />
+          </div>
+          <span style={{ fontSize:18, fontWeight:700, color:M3.onSurface, letterSpacing:-0.3 }}>ReadLoop</span>
+        </div>
+        <nav style={{ display:'flex', gap:2, marginLeft:8 }}>
+          {['Library','Review','Search','Recap'].map(n => (
+            <button key={n} onClick={()=>setActiveNav(n)} style={{ height:36, padding:'0 16px', borderRadius:9999, border:0, cursor:'pointer', background: activeNav===n?M3.secondaryCont:'transparent', color: activeNav===n?M3.onSecondaryCont:M3.onSurfaceVar, fontFamily:'Roboto,system-ui', fontSize:14, fontWeight:500 }}>
+              {n}{n==='Review' && todayCards.length>0 && <span style={{ marginLeft:6, background:M3.primary, color:M3.onPrimary, borderRadius:'50%', width:18, height:18, fontSize:11, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>{todayCards.length}</span>}
+            </button>
+          ))}
+        </nav>
+        <div style={{ flex:1 }} />
+        <Btn variant="tonal" icon="add" onClick={()=>setShowAdd(true)}>아티클 추가</Btn>
+        <div style={{ width:36, height:36, borderRadius:'50%', background:M3.tertiaryCont, color:M3.onTertiaryCont, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:14, flexShrink:0 }}>주</div>
+      </header>
+
+      <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
+        {/* Main */}
+        <main style={{ flex:1, overflow:'auto' }}>
+          {activeNav === 'Library' && (
+            <div style={{ padding:'28px 28px 56px' }}>
+              {/* Hero */}
+              <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', marginBottom:20 }}>
+                <div>
+                  <div style={{ fontSize:14, color:M3.onSurfaceVar }}>안녕하세요 👋</div>
+                  <h1 style={{ margin:'4px 0 0', fontSize:30, lineHeight:'38px', fontWeight:400, color:M3.onSurface, letterSpacing:-0.5 }}>
+                    {stats.weekArticles > 0 ? <>이번 주 <span style={{ color:M3.primary }}>{stats.weekArticles}개</span> 읽었고,<br />평균 이해도는 <span style={{ color:M3.primary }}>{stats.avgScore > 0 ? `${stats.avgScore}점` : '아직 없어요'}</span></> : <>아티클을 추가하고<br /><span style={{ color:M3.primary }}>복습을 시작</span>해보세요</>}
+                  </h1>
+                </div>
+                <div style={{ display:'flex', gap:8 }}>
+                  {todayCards.length > 0 && <Btn variant="tonal" icon="play_arrow" onClick={startReview}>복습 시작</Btn>}
+                  <Btn variant="filled" icon="add" onClick={()=>setShowAdd(true)}>아티클 추가</Btn>
+                </div>
+              </div>
+              {/* Stats */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
+                {[
+                  { k:'저장한 아티클', v:`${stats.total}`, sub:`+${stats.weekArticles} 이번 주`, icon:'bookmark', bg:M3.primaryCont, fg:M3.onPrimaryCont },
+                  { k:'복습 완료', v:`${stats.reviewedCount}`, sub:`전체 ${stats.total}개 중`, icon:'check_circle', bg:M3.secondaryCont, fg:M3.onSecondaryCont },
+                  { k:'평균 이해도', v: stats.avgScore > 0 ? `${stats.avgScore}점` : '-', sub: stats.avgScore > 0 ? '복습 기준' : '복습 후 표시', icon:'insights', bg:M3.tertiaryCont, fg:M3.onTertiaryCont },
+                  { k:'연속 학습', v:`${state.streak}일`, sub:'🔥 streak', icon:'local_fire_department', bg:M3.surfContHigh, fg:M3.onSurface },
+                ].map(s => (
+                  <div key={s.k} style={{ background:s.bg, color:s.fg, borderRadius:16, padding:16, display:'flex', flexDirection:'column', gap:10, minHeight:100 }}>
+                    <Icon name={s.icon} size={20} color="currentColor" />
+                    <div style={{ marginTop:'auto' }}>
+                      <div style={{ fontSize:26, lineHeight:'34px', fontWeight:400, letterSpacing:-0.3 }}>{s.v}</div>
+                      <div style={{ fontSize:12, opacity:0.85, marginTop:2 }}>{s.k} · {s.sub}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Filters */}
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:32, marginBottom:12 }}>
+                <h2 style={{ margin:0, fontSize:20, fontWeight:500, color:M3.onSurface }}>최근 저장한 아티클</h2>
+                <span style={{ fontSize:13, color:M3.onSurfaceVar }}>{filtered.length}개</span>
+              </div>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:18 }}>
+                <Chip selected={activeTag==='all'} onClick={()=>setActiveTag('all')}>전체</Chip>
+                {cats.map(c => <Chip key={c} selected={activeTag===c} onClick={()=>setActiveTag(c)}>{c}</Chip>)}
+              </div>
+              {/* Grid */}
+              {filtered.length === 0 ? (
+                <div style={{ textAlign:'center', padding:'60px 0', color:M3.onSurfaceVar }}>
+                  <Icon name="bookmark_add" size={48} color={M3.outlineVar} />
+                  <div style={{ marginTop:12, fontSize:16 }}>아직 아티클이 없어요</div>
+                  <div style={{ marginTop:8 }}><Btn variant="tonal" icon="add" onClick={()=>setShowAdd(true)}>첫 아티클 추가하기</Btn></div>
+                </div>
+              ) : (
+                <div className="anim-fade" style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14 }}>
+                  {filtered.map(a => <ArticleCard key={a.id} a={a} onClick={()=>setSelectedArticle(a)} />)}
+                </div>
+              )}
+            </div>
+          )}
+          {activeNav === 'Review' && <ReviewQueueView todayCards={todayCards} onStartReview={startReview} />}
+          {activeNav === 'Search' && <SearchView articles={state.articles} onOpenArticle={setSelectedArticle} />}
+          {activeNav === 'Recap' && <RecapView articles={state.articles} sessions={state.sessions} streak={state.streak} />}
+        </main>
+        {/* Sidebar only in Library */}
+        {activeNav === 'Library' && (
+          <WebSidebar todayCards={todayCards} streak={state.streak} onStartReview={startReview} weekRecap={weekRecap} />
+        )}
+      </div>
+
+      {/* Modals */}
+      {showAdd && <AddArticleModal onClose={()=>setShowAdd(false)} onAdd={art=>dispatch({type:'ADD_ARTICLE',article:art})} />}
+      {selectedArticle && <ArticleDetail article={selectedArticle} onClose={()=>setSelectedArticle(null)} onDelete={id=>{dispatch({type:'DELETE_ARTICLE',id});setSelectedArticle(null);}} />}
+      {reviewSession && <ReviewSession cards={reviewSession} onClose={()=>setReviewSession(null)} onComplete={results=>{dispatch({type:'COMPLETE_REVIEW',results});setReviewSession(null);}} />}
+    </div>
+  );
+}
+
+// ─── Mobile Layout ────────────────────────────────────────────────────────────
+function MobileApp({ state, dispatch }) {
+  const [activeNav, setActiveNav] = useState('home');
+  const [showAdd, setShowAdd] = useState(false);
+  const [selectedArticle, setSelectedArticle] = useState(null);
+  const [reviewSession, setReviewSession] = useState(null);
+
+  const stats = useMemo(() => computeStats(state.articles), [state.articles]);
+  const todayCards = useMemo(() => getTodayCards(state.articles), [state.articles]);
+
+  const startReview = () => { const c = getTodayCards(state.articles); if (c.length) setReviewSession(c); };
+
+  const navItems = [
+    { id:'home', label:'Home', icon:'home' },
+    { id:'review', label:'Review', icon:'auto_stories' },
+    { id:'search', label:'Search', icon:'search' },
+    { id:'recap', label:'Recap', icon:'bar_chart' },
+  ];
+
+  return (
+    <div style={{ width:390, maxWidth:'100%', height:844, maxHeight:'90vh', background:M3.surface, display:'flex', flexDirection:'column', borderRadius:40, overflow:'hidden', border:`8px solid ${M3.outlineVar}`, boxShadow:'0 32px 80px rgba(0,0,0,0.22)' }}>
+      {/* Status bar */}
+      <div style={{ height:44, padding:'0 28px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, fontSize:14, fontWeight:500, color:M3.onSurface, background:M3.surface }}>
+        <span>9:41</span>
+        <div style={{ display:'flex', gap:5, alignItems:'center' }}>
+          <Icon name="signal_cellular_alt" size={14} color={M3.onSurface} fill={1} />
+          <Icon name="wifi" size={14} color={M3.onSurface} fill={1} />
+          <Icon name="battery_full" size={14} color={M3.onSurface} fill={1} />
+        </div>
+      </div>
+
+      {/* Content */}
+      <div style={{ flex:1, overflowY:'auto', overflowX:'hidden' }}>
+        {activeNav === 'home' && (
+          <div>
+            <div style={{ padding:'8px 20px 0', display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ width:32, height:32, borderRadius:9, background:M3.primary, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <Icon name="autorenew" size={18} color={M3.onPrimary} />
+              </div>
+              <span style={{ fontSize:18, fontWeight:700, color:M3.onSurface, flex:1 }}>ReadLoop</span>
+              <IconBtn name="add" onClick={()=>setShowAdd(true)} color={M3.primary} />
+            </div>
+            <div style={{ padding:'12px 20px 0' }}>
+              <div style={{ fontSize:13, color:M3.onSurfaceVar }}>안녕하세요 👋</div>
+              <div style={{ fontSize:24, lineHeight:'30px', fontWeight:400, color:M3.onSurface, marginTop:4, letterSpacing:-0.3 }}>
+                {stats.weekArticles > 0 ? <>이번 주 <span style={{ color:M3.primary }}>{stats.weekArticles}개</span> 읽었어요</> : <>아티클을 <span style={{ color:M3.primary }}>추가</span>해보세요</>}
+              </div>
+            </div>
+            <div style={{ padding:'14px 20px 0', display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              {[
+                { icon:'bookmark', v:`${stats.total}`, k:'저장 아티클', bg:M3.primaryCont, fg:M3.onPrimaryCont },
+                { icon:'check_circle', v:`${stats.reviewedCount}`, k:'복습 완료', bg:M3.secondaryCont, fg:M3.onSecondaryCont },
+                { icon:'insights', v: stats.avgScore > 0 ? `${stats.avgScore}점` : '-', k:'평균 이해도', bg:M3.tertiaryCont, fg:M3.onTertiaryCont },
+                { icon:'local_fire_department', v:`${state.streak}일`, k:'연속 학습', bg:M3.surfContHigh, fg:M3.onSurface },
+              ].map(s => (
+                <div key={s.k} style={{ background:s.bg, color:s.fg, borderRadius:14, padding:12, display:'flex', flexDirection:'column', gap:8 }}>
+                  <Icon name={s.icon} size={18} color="currentColor" />
+                  <div style={{ fontSize:22, lineHeight:'26px', fontWeight:400, letterSpacing:-0.3 }}>{s.v}</div>
+                  <div style={{ fontSize:11, opacity:0.85 }}>{s.k}</div>
+                </div>
+              ))}
+            </div>
+            {todayCards.length > 0 ? (
+              <div style={{ margin:'18px 20px 0', borderRadius:20, padding:'16px', background:M3.primary, color:M3.onPrimary, display:'flex', alignItems:'center', gap:12 }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:12, fontWeight:500, opacity:0.85, letterSpacing:0.5 }}>오늘의 복습 · {todayCards.length}장</div>
+                  <div style={{ fontSize:18, fontWeight:500, marginTop:2 }}>지금 5분만 다시 떠올리기</div>
+                </div>
+                <button onClick={startReview} style={{ width:48, height:48, borderRadius:16, background:M3.onPrimary, color:M3.primary, border:0, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <Icon name="play_arrow" size={24} color="currentColor" fill={1} />
+                </button>
+              </div>
+            ) : (
+              <div style={{ margin:'18px 20px 0', borderRadius:20, padding:'16px', background:M3.primaryCont, color:M3.onPrimaryCont, textAlign:'center' }}>
+                <div style={{ fontSize:15, fontWeight:500 }}>✅ 오늘 복습 완료!</div>
+              </div>
+            )}
+            <div style={{ padding:'22px 20px 0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div style={{ fontSize:17, fontWeight:500, color:M3.onSurface }}>최근 아티클</div>
+              <button onClick={()=>setShowAdd(true)} style={{ background:'none', border:0, fontSize:13, color:M3.primary, fontWeight:500, cursor:'pointer', fontFamily:'Roboto', display:'flex', alignItems:'center', gap:4 }}>
+                <Icon name="add" size={16} color={M3.primary} />추가
+              </button>
+            </div>
+            <div style={{ padding:'12px 20px 28px', display:'flex', flexDirection:'column', gap:8 }}>
+              {state.articles.length === 0 ? (
+                <div style={{ textAlign:'center', padding:'32px', color:M3.onSurfaceVar }}>
+                  <Icon name="bookmark_add" size={36} color={M3.outlineVar} />
+                  <div style={{ marginTop:8, fontSize:14 }}>아직 아티클이 없어요</div>
+                </div>
+              ) : state.articles.slice(0,6).map(a => (
+                <div key={a.id} onClick={()=>setSelectedArticle(a)} style={{ background:M3.surfContLow, borderRadius:16, padding:14, display:'flex', flexDirection:'column', gap:6, cursor:'pointer' }}>
+                  <div style={{ fontSize:11, color:M3.onSurfaceVar, fontWeight:500 }}>{a.source} · {timeAgo(a.savedAt)}</div>
+                  <div style={{ fontSize:15, lineHeight:'20px', fontWeight:500, color:M3.onSurface }}>{a.title}</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                    {a.tags.slice(0,2).map(t => <span key={t} style={{ fontSize:11, padding:'2px 8px', borderRadius:6, background:M3.surface, color:M3.onSurfaceVar, border:`1px solid ${M3.outlineVar}` }}>{t}</span>)}
+                    <div style={{ flex:1 }} />
+                    {a.reviewCount > 0 && <span style={{ fontSize:12, color: a.score>=80?M3.primary:M3.onSurfaceVar, fontWeight:500 }}>{a.score}점</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {activeNav === 'review' && (
+          <div style={{ padding:'16px 20px' }}>
+            <div style={{ fontSize:22, fontWeight:500, color:M3.onSurface, marginBottom:16 }}>복습 큐</div>
+            {todayCards.length === 0 ? (
+              <div style={{ textAlign:'center', padding:'40px 0', color:M3.onSurfaceVar }}>
+                <Icon name="check_circle" size={48} color={M3.primary} fill={1} />
+                <div style={{ marginTop:12, fontSize:17, fontWeight:500, color:M3.onSurface }}>오늘 복습 완료!</div>
+                <div style={{ marginTop:6, fontSize:14 }}>내일 새 카드가 준비돼요</div>
+              </div>
+            ) : (
+              <>
+                <Btn variant="filled" icon="play_arrow" onClick={startReview} style={{ width:'100%', justifyContent:'center', marginBottom:16, height:48 }}>복습 시작 ({todayCards.length}장)</Btn>
+                {todayCards.map((c,i) => (
+                  <div key={c.id} style={{ padding:'12px 14px', background:M3.surfContLow, borderRadius:12, marginBottom:8 }}>
+                    <span style={{ fontSize:11, padding:'2px 8px', borderRadius:6, background:M3.secondaryCont, color:M3.onSecondaryCont, fontWeight:600 }}>{c.type}</span>
+                    <div style={{ fontSize:14, fontWeight:500, color:M3.onSurface, marginTop:6, lineHeight:'20px' }}>{c.q}</div>
+                    <div style={{ fontSize:12, color:M3.onSurfaceVar, marginTop:6 }}>from · {c.articleTitle}</div>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+        {activeNav === 'search' && (
+          <div style={{ padding:'16px 20px' }}>
+            <SearchView articles={state.articles} onOpenArticle={setSelectedArticle} />
+          </div>
+        )}
+        {activeNav === 'recap' && (
+          <div style={{ padding:'0 4px' }}>
+            <RecapView articles={state.articles} sessions={state.sessions} streak={state.streak} />
+          </div>
+        )}
+      </div>
+
+      {/* Bottom nav */}
+      <div style={{ height:80, background:M3.surfContLow, borderTop:`1px solid ${M3.outlineVar}`, display:'flex', alignItems:'stretch', flexShrink:0 }}>
+        {navItems.map(it => (
+          <button key={it.id} onClick={()=>setActiveNav(it.id)} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:3, border:0, cursor:'pointer', background: activeNav===it.id?M3.secondaryCont:'transparent', position:'relative' }}>
+            {it.id==='review' && todayCards.length>0 && <span style={{ position:'absolute', top:12, right:'calc(50% - 14px)', background:M3.error, color:'#fff', fontSize:10, fontWeight:700, width:16, height:16, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center' }}>{todayCards.length}</span>}
+            <Icon name={it.icon} size={22} color={activeNav===it.id?M3.onSecondaryCont:M3.onSurfaceVar} fill={activeNav===it.id?1:0} />
+            <span style={{ fontSize:11, color:activeNav===it.id?M3.onSecondaryCont:M3.onSurfaceVar, fontWeight:activeNav===it.id?500:400 }}>{it.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {showAdd && <AddArticleModal onClose={()=>setShowAdd(false)} onAdd={art=>dispatch({type:'ADD_ARTICLE',article:art})} />}
+      {selectedArticle && <ArticleDetail article={selectedArticle} onClose={()=>setSelectedArticle(null)} onDelete={id=>{dispatch({type:'DELETE_ARTICLE',id});setSelectedArticle(null);}} />}
+      {reviewSession && <ReviewSession cards={reviewSession} onClose={()=>setReviewSession(null)} onComplete={results=>{dispatch({type:'COMPLETE_REVIEW',results});setReviewSession(null);}} />}
+    </div>
+  );
+}
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
+function App() {
+  const [state, dispatch] = useReducer(reducer, null, loadState);
+  const [viewMode, setViewMode] = useState('auto');
+  const [winW, setWinW] = useState(window.innerWidth);
+
+  useEffect(() => {
+    const h = () => setWinW(window.innerWidth);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+
+  const isMobile = viewMode === 'mobile' || (viewMode === 'auto' && winW < 768);
+
+  const Toggle = () => (
+    <div style={{ position:'fixed', bottom:20, right:20, zIndex:999, display:'flex', gap:6, background:M3.inverseSurface, borderRadius:9999, padding:'6px 10px', boxShadow:'0 4px 16px rgba(0,0,0,0.3)' }}>
+      {[{k:'web',icon:'computer'},{k:'mobile',icon:'smartphone'}].map(v => (
+        <button key={v.k} onClick={()=>setViewMode(p=>p===v.k?'auto':v.k)} style={{
+          display:'flex', alignItems:'center', gap:5, height:30, padding:'0 10px', borderRadius:9999,
+          border:0, cursor:'pointer', fontFamily:'Roboto,system-ui', fontSize:12, fontWeight:500,
+          background: viewMode===v.k?M3.inversePrimary:'transparent',
+          color: viewMode===v.k?M3.onPrimaryCont:M3.inverseOnSurf,
+        }}>
+          <Icon name={v.icon} size={15} color="currentColor" />{v.k}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (!isMobile) {
+    return (
+      <>
+        <div style={{ width:'100%' }}><WebApp state={state} dispatch={dispatch} /></div>
+        <Toggle />
+      </>
+    );
+  }
+
+  return (
+    <div style={{ width:'100%', minHeight:'100vh', background:'#ECE6F0', display:'flex', alignItems:'center', justifyContent:'center', padding:'24px 16px' }}>
+      <MobileApp state={state} dispatch={dispatch} />
+      <Toggle />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+  }
+</script>
+</body>
+</html>
