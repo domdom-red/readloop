@@ -39,7 +39,7 @@ export default function LibraryView({ articles, todayCards, streak, onOpenArticl
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
+      <div className="stats-grid">
         {[
           { k: '저장한 아티클', v: `${stats.total}`, sub: `+${stats.weekArticles} 이번 주`, icon: 'bookmark', bg: M3.primaryCont, fg: M3.onPrimaryCont },
           { k: '복습 완료', v: `${stats.reviewedCount}`, sub: `전체 ${stats.total}개 중`, icon: 'check_circle', bg: M3.secondaryCont, fg: M3.onSecondaryCont },
@@ -80,7 +80,7 @@ export default function LibraryView({ articles, todayCards, streak, onOpenArticl
           </div>
         </div>
       ) : (
-        <div className="anim-fade" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
+        <div className="anim-fade article-grid">
           {filtered.map(a => <ArticleCard key={a.id} article={a} onClick={() => onOpenArticle(a)} />)}
         </div>
       )}

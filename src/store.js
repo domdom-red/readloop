@@ -1,4 +1,3 @@
-import { SAMPLE_ARTICLES } from './data.js';
 import { todayStr } from './utils.js';
 
 const KEY = 'readloop_v2';
@@ -9,10 +8,10 @@ export function loadState() {
     if (raw) return JSON.parse(raw);
   } catch {}
   return {
-    articles: SAMPLE_ARTICLES,
+    articles: [],
     sessions: [],
-    streak: 3,
-    lastActiveDate: new Date(Date.now() - 86400000).toISOString().slice(0, 10),
+    streak: 0,
+    lastActiveDate: null,
   };
 }
 
